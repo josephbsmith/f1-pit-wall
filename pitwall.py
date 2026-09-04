@@ -75,7 +75,7 @@ def fetch(endpoint: str, session: str) -> list[dict[str, Any]]:
 
 
 def fetch_session(session: str) -> dict[str, list[dict[str, Any]]]:
-    with ThreadPoolExecutor(max_workers=len(ENDPOINTS)) as pool:
+    with ThreadPoolExecutor(max_workers=6) as pool:
         values = pool.map(lambda endpoint: fetch(endpoint, session), ENDPOINTS)
     return dict(zip(ENDPOINTS, values))
 

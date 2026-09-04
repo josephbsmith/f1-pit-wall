@@ -12,8 +12,7 @@ Python file with no third-party packages.
 python3 pitwall.py serve --session latest --pit-loss 22 --port 8000
 ```
 
-Open `http://localhost:8000`. Timing refreshes every ten seconds. Real-time OpenF1 data requires a
-subscribed OpenF1 account:
+Open `http://localhost:8000`. Timing refreshes every ten seconds. Real-time [OpenF1](https://openf1.org) data requires a subscribed account:
 
 ```sh
 export OPENF1_USERNAME="your-email"
