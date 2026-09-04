@@ -33,6 +33,7 @@ assert [row["name"] for row in state["board"]] == ["AAA", "BBB"]
 assert state["board"][0]["recent_pace_seconds"] == 90.5
 assert state["board"][1]["tyre_age_laps"] == 3
 assert state["board"][0]["estimated_rejoin_position"] == 2
+assert state["lap_number"] == 11
 assert state["race_control"][0]["message"] == "DRS ENABLED"
 assert state["board"][0]["pace_sparkline_path"].startswith("M0")
 assert state["board"][0]["stint_history"] == [{"compound": "MEDIUM", "laps": 11}]
@@ -54,7 +55,10 @@ data2 = {
         {"driver_number": 1, "lap_number": 2, "lap_duration": 89.0, "date_start": "2026-01-01T12:02:00+00:00"},
         {"driver_number": 1, "lap_number": 3, "lap_duration": 88.0, "date_start": "2026-01-01T12:05:00+00:00"},
     ],
-    "stints": [], "race_control": [], "weather": [],
+    "stints": [
+        {"driver_number": 1, "stint_number": 1, "lap_start": 1, "lap_end": 2, "compound": "MEDIUM"},
+        {"driver_number": 1, "stint_number": 2, "lap_start": 3, "compound": "HARD"},
+    ], "race_control": [], "weather": [],
 }
 early = build_state_at(data2, "2026-01-01T12:01:00+00:00")
 late = build_state_at(data2, "2026-01-01T12:05:00+00:00")
@@ -63,6 +67,7 @@ late_p1 = next(r for r in late["board"] if r["driver_number"] == 1)
 assert early_p1["position"] == 2 and late_p1["position"] == 1  # position flip only visible late
 assert early_p1["recent_pace_seconds"] == 90.0                 # one lap known at t_early
 assert late_p1["recent_pace_seconds"] == 89.0                  # median of three at t_late
+assert early_p1["compound"] == "MEDIUM" and late_p1["compound"] == "HARD"
 
 # snapshots: span 12:00:00..12:05:00 at 60s = 6 states inclusive
 assert len(build_snapshots(data2, every=60)) == 6

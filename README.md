@@ -1,23 +1,36 @@
 # F1 Pit Wall
 
-A local, read-only second screen for an OpenF1 race session. It keeps position, gaps, tyre compound and
-age, recent pace, estimated pit rejoin position, latest weather, and race-control messages visible in
-one browser tab.
+See the whole race: running order, gaps, tyre life, recent pace, race control, and the field each
+driver would rejoin after a stop. The interface runs locally in one browser tab; the server is one
+Python file with no third-party packages.
+
+[Open the 2025 Monaco Grand Prix replay.](https://josephbsmith.com/pit-wall)
+
+## Run live
 
 ```sh
 python3 pitwall.py serve --session latest --pit-loss 22 --port 8000
 ```
 
-Then open `http://localhost:8000`. The page refreshes every ten seconds. Historical sessions use their
-numeric session key. If the selected OpenF1 access tier requires authentication, set `OPENF1_TOKEN` in
-the shell before starting the server.
+Open `http://localhost:8000`. Timing refreshes every ten seconds. Real-time OpenF1 data requires an
+access token:
 
-The implementation follows the [OpenF1 API documentation](https://openf1.org/docs/). The pit-rejoin
-column is a transparent static estimate: current gap to leader plus the configured pit-loss seconds,
-ranked against the field's current gaps. It is not a strategy prediction. This repository stores no
-licensed video and does not rebroadcast an OpenF1 data feed.
+```sh
+export OPENF1_TOKEN="your-token"
+python3 pitwall.py serve --session latest
+```
 
-[Replay the public demonstration.](https://josephbsmith.com/pit-wall)
+Historical sessions use their numeric session key and are available without authentication.
+
+## Bake a replay
+
+```sh
+python3 pitwall.py snapshots --session 9979 --every 120 --out monaco.json
+python3 pitwall.py serve --replay monaco.json
+```
+
+The rejoin column is intentionally simple: current gap to the leader plus the configured pit-loss
+time, ranked back into the current field. It is a decision aid, not a strategy prediction.
 
 ## Check
 
@@ -25,4 +38,5 @@ licensed video and does not rebroadcast an OpenF1 data feed.
 python3 test_pitwall.py
 ```
 
-MIT licensed.
+Data from [OpenF1](https://openf1.org/docs/). No licensed video is stored or rebroadcast. Not
+affiliated with Formula 1. MIT licensed.
