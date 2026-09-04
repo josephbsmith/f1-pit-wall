@@ -32,7 +32,7 @@ python3 pitwall.py serve --replay monaco.json
 ```
 
 The rejoin column is intentionally simple: current gap to the leader plus the configured pit-loss
-time, ranked back into the current field. It is a decision aid, not a strategy prediction.
+time, ranked back into the current field. Use it as a quick decision aid.
 
 ## Check
 
