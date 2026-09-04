@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import statistics
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -18,19 +19,55 @@ from typing import Any
 
 BASE = "https://api.openf1.org/v1"
 ENDPOINTS = ("drivers", "position", "intervals", "laps", "stints", "race_control", "weather")
+_TOKEN = ""
+_TOKEN_EXPIRES = 0.0
+_TOKEN_LOCK = threading.Lock()
+
+
+def access_token() -> str | None:
+    """Return a current OpenF1 token, refreshing account credentials when needed."""
+    global _TOKEN, _TOKEN_EXPIRES
+    if manual := os.environ.get("OPENF1_TOKEN"):
+        return manual
+    with _TOKEN_LOCK:
+        if _TOKEN and time.time() < _TOKEN_EXPIRES:
+            return _TOKEN
+        username = os.environ.get("OPENF1_USERNAME")
+        password = os.environ.get("OPENF1_PASSWORD")
+        if not username or not password:
+            return None
+        body = urllib.parse.urlencode({"username": username, "password": password}).encode()
+        request = urllib.request.Request(
+            "https://api.openf1.org/token",
+            data=body,
+            headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": "F1-Pit-Wall/1.0"},
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            payload = json.load(response)
+        _TOKEN = payload["access_token"]
+        _TOKEN_EXPIRES = time.time() + max(60, int(payload.get("expires_in", 3600)) - 60)
+        return _TOKEN
+
+
+def clear_cached_token() -> None:
+    global _TOKEN, _TOKEN_EXPIRES
+    with _TOKEN_LOCK:
+        _TOKEN, _TOKEN_EXPIRES = "", 0.0
 
 
 def fetch(endpoint: str, session: str) -> list[dict[str, Any]]:
     query = urllib.parse.urlencode({"session_key": session})
-    request = urllib.request.Request(f"{BASE}/{endpoint}?{query}", headers={"User-Agent": "F1-Pit-Wall/1.0"})
-    token = os.environ.get("OPENF1_TOKEN")
-    if token:
-        request.add_header("Authorization", f"Bearer {token}")
     for attempt in range(4):
+        request = urllib.request.Request(f"{BASE}/{endpoint}?{query}", headers={"User-Agent": "F1-Pit-Wall/1.0"})
+        if token := access_token():
+            request.add_header("Authorization", f"Bearer {token}")
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
                 return json.load(response)
         except urllib.error.HTTPError as exc:
+            if exc.code == 401 and os.environ.get("OPENF1_USERNAME") and attempt < 3:
+                clear_cached_token()
+                continue
             if exc.code != 429 or attempt == 3:
                 raise
             time.sleep(2 ** attempt * 5)  # 5s, 10s, 20s — OpenF1 free tier rate limit
@@ -205,7 +242,7 @@ HTML = """<!doctype html>
 *{box-sizing:border-box}html{background:var(--ink);color-scheme:dark}body{margin:0;background:var(--ink);color:var(--white);font-family:var(--sans);min-height:100vh}.topbar{height:74px;background:var(--red);display:flex;align-items:center;justify-content:space-between;padding:0 clamp(16px,3vw,48px);position:relative;overflow:hidden}.topbar:after{content:"";position:absolute;inset:0 0 0 58%;background:radial-gradient(circle,rgba(0,0,0,.28) 1.2px,transparent 1.5px);background-size:8px 8px;transform:skewX(-18deg);transform-origin:bottom}.brand{display:flex;align-items:center;gap:13px;position:relative;z-index:1}.brand-mark{width:42px;height:23px;border-top:7px solid #fff;border-right:7px solid #fff;transform:skewX(-24deg)}.brand strong{font-size:18px;font-style:italic;letter-spacing:-.03em}.top-status{position:relative;z-index:1;display:flex;align-items:center;gap:9px;font:700 11px var(--mono);letter-spacing:.1em}.signal{width:8px;height:8px;background:#fff;border-radius:50%;box-shadow:0 0 0 4px rgba(255,255,255,.18)}
 .workspace{width:min(1480px,100%);margin:auto;padding:clamp(18px,3vw,42px)}.session-head{display:flex;align-items:end;justify-content:space-between;gap:24px;margin-bottom:22px}.eyebrow{display:block;color:var(--red);font:800 11px var(--mono);letter-spacing:.16em;text-transform:uppercase;margin-bottom:6px}.session-head h1{margin:0;font:900 italic clamp(34px,5vw,64px)/.88 var(--sans);letter-spacing:-.065em;text-transform:uppercase}.session-head h1 span{color:transparent;-webkit-text-stroke:1px var(--white)}.meta{margin:0;color:var(--muted);font:600 11px/1.6 var(--mono);letter-spacing:.06em;text-align:right;text-transform:uppercase}
 .session-strip{min-height:72px;background:var(--red);display:grid;grid-template-columns:minmax(180px,1.4fr) repeat(3,minmax(100px,.7fr));align-items:stretch;clip-path:polygon(0 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%)}.session-strip>div{padding:15px 20px;border-right:1px solid rgba(255,255,255,.22)}.session-strip small{display:block;font:700 9px var(--mono);letter-spacing:.16em;opacity:.72;text-transform:uppercase;margin-bottom:7px}.session-strip strong{display:block;font:900 18px/1 var(--sans);letter-spacing:-.025em;text-transform:uppercase}.session-strip .race-name strong{font-size:22px;font-style:italic}
-#transport{display:none;align-items:center;gap:16px;background:#0b0c0f;border:1px solid var(--line);border-top:0;padding:12px 16px}#transport.on{display:flex}#play{width:38px;height:34px;border:0;background:var(--white);color:var(--ink);font:900 15px var(--sans);cursor:pointer;clip-path:polygon(0 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%)}#play:hover{background:var(--red);color:#fff}#scrub{flex:1;accent-color:var(--red)}#tick{min-width:112px;text-align:right;color:var(--muted);font:700 10px var(--mono);letter-spacing:.08em}
+#transport{display:none;align-items:center;gap:16px;background:#0b0c0f;border:1px solid var(--line);border-top:0;padding:12px 16px}#transport.on{display:flex}#play{width:38px;height:34px;border:0;background:var(--white);color:var(--ink);display:grid;place-items:center;cursor:pointer;clip-path:polygon(0 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%)}#play svg{width:16px;height:16px;fill:currentColor}#play:hover{background:var(--red);color:#fff}#scrub{flex:1;accent-color:var(--red)}#tick{min-width:112px;text-align:right;color:var(--muted);font:700 10px var(--mono);letter-spacing:.08em}
 .timing-grid{display:grid;grid-template-columns:minmax(0,2.2fr) minmax(280px,.8fr);gap:12px;margin-top:12px}.panel{background:var(--panel);border-top:3px solid var(--red);min-width:0}.panel-title{height:46px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid var(--line);font:800 11px var(--mono);letter-spacing:.13em;text-transform:uppercase}.panel-title span{color:var(--muted);font-size:9px}.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:850px;font-variant-numeric:tabular-nums}th{height:34px;padding:0 10px;background:#0d0e12;color:#848895;text-align:left;font:700 9px var(--mono);letter-spacing:.12em;text-transform:uppercase}td{height:56px;padding:6px 10px;border-top:1px solid var(--line);font:700 12px var(--mono);white-space:nowrap}tbody tr{background:var(--panel)}tbody tr:hover{background:var(--panel2)}.pos{width:44px;color:#fff;font:900 italic 20px var(--sans);text-align:center}.driver-cell{display:flex;align-items:center;gap:10px;border-left:4px solid;padding-left:10px}.driver-no{color:var(--muted);font-size:9px}.driver-name{display:block;color:#fff;font:900 italic 16px var(--sans);letter-spacing:-.025em}.driver-team{display:block;max-width:130px;overflow:hidden;text-overflow:ellipsis;color:var(--muted);font:600 8px var(--mono);letter-spacing:.06em;text-transform:uppercase;margin-top:2px}.leader{color:var(--purple)}.tyre{display:inline-flex;align-items:center;gap:6px}.tyre-dot{width:18px;height:18px;border:3px solid var(--tyre);border-radius:50%;display:inline-grid;place-items:center;color:var(--tyre);font:900 8px var(--sans)}.tyre-age{color:var(--muted);font-size:9px}.pace{color:var(--green)}.spark{color:var(--green);vertical-align:middle}.spark-grid{stroke:#444852;stroke-width:.7}.rejoin{font:900 15px var(--sans)}.loss{display:block;color:var(--red);font:700 8px var(--mono);letter-spacing:.04em;margin-top:2px}.hold{color:var(--muted)}.stint-history{display:flex;gap:4px}.stint{width:18px;height:18px;border:2px solid var(--tyre);border-radius:50%;display:grid;place-items:center;color:var(--tyre);font:800 7px var(--sans)}
 .side{display:grid;align-content:start;gap:12px}.weather-grid{display:grid;grid-template-columns:1fr 1fr}.weather-stat{min-height:78px;padding:14px 15px;border-bottom:1px solid var(--line);border-right:1px solid var(--line)}.weather-stat:nth-child(even){border-right:0}.weather-stat:nth-last-child(-n+2){border-bottom:0}.weather-stat small{display:block;color:var(--muted);font:700 8px var(--mono);letter-spacing:.13em;text-transform:uppercase;margin-bottom:8px}.weather-stat strong{font:900 20px var(--mono)}.weather-stat .unit{color:var(--muted);font-size:10px;margin-left:3px}.messages{list-style:none;margin:0;padding:0;max-height:510px;overflow:auto}.messages li{display:grid;grid-template-columns:44px 1fr;gap:9px;padding:12px 14px;border-top:1px solid var(--line);font:600 10px/1.45 var(--mono)}.messages li:first-child{border-top:0}.lap-tag{align-self:start;background:var(--red);color:white;padding:4px 5px;text-align:center;font-size:8px;font-weight:800}.message-type{display:block;color:var(--muted);font-size:8px;letter-spacing:.1em;margin-bottom:3px;text-transform:uppercase}.empty{padding:28px 16px!important;color:var(--muted)}
 .legend{display:flex;flex-wrap:wrap;gap:16px;padding:16px 2px;color:var(--muted);font:600 9px var(--mono);letter-spacing:.06em;text-transform:uppercase}.legend b{color:var(--white)}.legend i{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--red);margin-right:6px}.error{color:#fff;background:var(--red);padding:10px 14px}
@@ -224,7 +261,7 @@ HTML = """<!doctype html>
     <div><small>Pit loss model</small><strong id="pitLoss">—</strong></div>
     <div><small>Last update</small><strong id="lastUpdate">—</strong></div>
   </section>
-  <div id="transport"><button id="play" aria-label="Play replay">▶</button><input id="scrub" type="range" min="0" max="0" value="0" aria-label="Replay position"><span id="tick"></span></div>
+  <div id="transport"><button id="play" aria-label="Play replay"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.4v13.2L19 12 8 5.4Z"/></svg></button><input id="scrub" type="range" min="0" max="0" value="0" aria-label="Replay position"><span id="tick"></span></div>
   <div class="timing-grid">
     <section class="panel"><div class="panel-title">Timing tower <span>Gap + strategy model</span></div><div class="table-wrap"><table><caption hidden>Current running order and strategy data</caption><thead><tr><th>Pos</th><th class="driver-col">Driver</th><th class="gap-col">Gap</th><th class="optional">Interval</th><th class="tyre-col">Tyre</th><th class="pace-col">Last 3</th><th class="optional">Pace</th><th class="rejoin-col">Rejoin</th><th class="optional">Stints</th></tr></thead><tbody id="board"><tr><td class="empty" colspan="9">ACQUIRING TIMING DATA…</td></tr></tbody></table></div></section>
     <aside class="side">
@@ -276,12 +313,13 @@ function render(s,replay=false){
 }
 async function state(){const r=await fetch('/state.json');if(!r.ok)throw Error(`${r.status} ${r.statusText}`);return r.json()}
 async function load(){try{render(await state())}catch(e){elements.meta.classList.add('error');elements.meta.textContent=`Feed unavailable · ${e.message}`}}
+const ICON={play:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.4v13.2L19 12 8 5.4Z"/></svg>',pause:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zm6 0h4v14h-4z"/></svg>'};
 async function boot(){
   try{const r=await fetch('/snapshots.json');if(r.ok){const snaps=await r.json();const start=snaps.findIndex(s=>currentLap(s)>=10&&s.board.some(r=>r.recent_pace_seconds));let i=start<0?0:start;let timer=null;elements.transport.classList.add('on');elements.scrub.max=snaps.length-1;
-    const stop=()=>{clearInterval(timer);timer=null;elements.play.textContent='▶';elements.play.setAttribute('aria-label','Play replay')};
+    const stop=()=>{clearInterval(timer);timer=null;elements.play.innerHTML=ICON.play;elements.play.setAttribute('aria-label','Play replay')};
     const draw=()=>{render(snaps[i],true);elements.scrub.value=i;elements.tick.textContent=`FRAME ${String(i+1).padStart(2,'0')} / ${String(snaps.length).padStart(2,'0')}`};
     elements.scrub.oninput=()=>{i=Number(elements.scrub.value);stop();draw()};
-    elements.play.onclick=()=>{if(timer)return stop();elements.play.textContent='Ⅱ';elements.play.setAttribute('aria-label','Pause replay');timer=setInterval(()=>{if(i>=snaps.length-1)return stop();i++;draw()},900)};
+    elements.play.onclick=()=>{if(timer)return stop();elements.play.innerHTML=ICON.pause;elements.play.setAttribute('aria-label','Pause replay');timer=setInterval(()=>{if(i>=snaps.length-1)return stop();i++;draw()},900)};
     draw();return}}
   catch(e){}
   load();setInterval(load,10000)

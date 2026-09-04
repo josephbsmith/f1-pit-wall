@@ -12,13 +12,16 @@ Python file with no third-party packages.
 python3 pitwall.py serve --session latest --pit-loss 22 --port 8000
 ```
 
-Open `http://localhost:8000`. Timing refreshes every ten seconds. Real-time OpenF1 data requires an
-access token:
+Open `http://localhost:8000`. Timing refreshes every ten seconds. Real-time OpenF1 data requires a
+subscribed OpenF1 account:
 
 ```sh
-export OPENF1_TOKEN="your-token"
+export OPENF1_USERNAME="your-email"
+export OPENF1_PASSWORD="your-password"
 python3 pitwall.py serve --session latest
 ```
+
+The app exchanges those credentials for OpenF1's one-hour access token and refreshes it automatically. A temporary `OPENF1_TOKEN` is still accepted if you already have one.
 
 Historical sessions use their numeric session key and are available without authentication.
 
