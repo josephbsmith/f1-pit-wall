@@ -75,6 +75,48 @@ assert len(build_snapshots(data2, every=60)) == 6
 # sparkline geometry
 assert sparkline_path([]) == ""
 flat = sparkline_path([90, 90, 90])
-assert flat.startswith("M0.0,10.0") and flat.count("L") == 2
+assert flat.startswith("M0.0,14.0") and flat.count("L") == 2
+
+# practice and qualifying use best-lap classification instead of race intervals
+qualifying = {
+    "session": [{"session_key": 2, "session_type": "Qualifying", "session_name": "Qualifying", "meeting_key": 9}],
+    "sessions": [
+        {"session_key": 1, "session_name": "Practice 1", "date_start": "2026-01-01T10:00:00Z"},
+        {"session_key": 2, "session_name": "Qualifying", "date_start": "2026-01-01T14:00:00Z"},
+    ],
+    "meeting": [{"meeting_key": 9, "meeting_name": "Test Grand Prix"}],
+    "drivers": data["drivers"],
+    "position": [], "intervals": [],
+    "laps": [
+        {"driver_number": 1, "lap_number": 1, "lap_duration": 91.2, "duration_sector_1": 30.0, "duration_sector_2": 31.0, "duration_sector_3": 30.2},
+        {"driver_number": 2, "lap_number": 1, "lap_duration": 90.8, "duration_sector_1": 29.8, "duration_sector_2": 31.0, "duration_sector_3": 30.0, "segments_sector_1": [2049, 2051]},
+    ],
+    "stints": [], "weather": [], "starting_grid": [],
+    "session_result": [
+        {"driver_number": 2, "position": 1, "duration": [91.0, 90.9, 90.8]},
+        {"driver_number": 1, "position": 2, "duration": [91.2, None, None]},
+    ],
+    "race_control": [{"date": "2026-01-01T14:10:00Z", "qualifying_phase": 2, "message": "Q2 STARTED"}],
+    "pit": [{"date": "2026-01-01T14:05:00Z", "driver_number": 1, "lane_duration": 20.5, "stop_duration": 2.4, "lap_number": 1}],
+    "overtakes": [],
+    "team_radio": [{"date": "2026-01-01T14:08:00Z", "driver_number": 2, "recording_url": "https://example.test/radio.mp3"}],
+    "car_data": [
+        {"date": "2026-01-01T14:09:00Z", "driver_number": 2, "speed": 250},
+        {"date": "2026-01-01T14:09:01Z", "driver_number": 2, "speed": 300, "n_gear": 8},
+    ],
+    "location": [
+        {"date": "2026-01-01T14:09:00Z", "driver_number": 1, "x": 10, "y": 10},
+        {"date": "2026-01-01T14:09:01Z", "driver_number": 1, "x": 20, "y": 30},
+        {"date": "2026-01-01T14:09:01Z", "driver_number": 2, "x": 30, "y": 20},
+    ],
+    "championship_drivers": [], "championship_teams": [],
+}
+qual_state = build_state(qualifying)
+assert qual_state["session_type"] == "Qualifying" and qual_state["phase"] == "Q2"
+assert [row["driver_number"] for row in qual_state["board"]] == [2, 1]
+assert qual_state["board"][0]["q3"] == 90.8
+assert qual_state["board"][0]["telemetry"]["speed"] == 300
+assert len(qual_state["track"]["cars"]) == 2 and len(qual_state["track"]["outline"]) == 2
+assert {event["kind"] for event in qual_state["events"]} == {"CONTROL", "PIT", "RADIO"}
 
 print("F1 Pit Wall check passed")
